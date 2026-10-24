@@ -23,6 +23,18 @@ struct Key { HKEY h=nullptr; ~Key(){if(h)RegCloseKey(h);} };
 struct Service { SC_HANDLE h=nullptr; ~Service(){if(h)CloseServiceHandle(h);} };
 struct Events { EVT_HANDLE h=nullptr; ~Events(){if(h)EvtClose(h);} };
 struct Devices { HDEVINFO h=INVALID_HANDLE_VALUE; ~Devices(){if(h!=INVALID_HANDLE_VALUE)SetupDiDestroyDeviceInfoList(h);} };
+struct File {
+    HANDLE h=INVALID_HANDLE_VALUE;
+    File()=default;explicit File(HANDLE value):h(value){}
+    File(const File&)=delete;File& operator=(const File&)=delete;
+    File(File&& other) noexcept:h(other.h){other.h=INVALID_HANDLE_VALUE;}
+    File& operator=(File&& other) noexcept {if(this!=&other){if(h!=INVALID_HANDLE_VALUE)CloseHandle(h);h=other.h;other.h=INVALID_HANDLE_VALUE;}return *this;}
+    ~File(){if(h!=INVALID_HANDLE_VALUE)CloseHandle(h);}
+};
+struct LocalBinary {
+    std::vector<File> parents;File file;std::wstring path;DWORD error=ERROR_SUCCESS;std::string detail;
+    explicit operator bool() const noexcept{return file.h!=INVALID_HANDLE_VALUE&&error==ERROR_SUCCESS;}
+};
 std::string Utf8(const std::wstring& w) {
     if(w.empty())return {};const int n=WideCharToMultiByte(CP_UTF8,WC_ERR_INVALID_CHARS,w.data(),static_cast<int>(w.size()),nullptr,0,nullptr,nullptr);
     if(!n)return "[invalid Windows UTF-16 label]";std::string s(static_cast<std::size_t>(n),0);
@@ -109,43 +121,77 @@ std::wstring Resolve(std::wstring path) {
     if(_wcsnicmp(path.c_str(),L"\\SystemRoot\\",12)==0)path=std::wstring(windows)+L"\\"+path.substr(12);
     else if(_wcsnicmp(path.c_str(),L"System32\\",9)==0)path=std::wstring(windows)+L"\\"+path;
     if(path.find(L'%')!=std::wstring::npos){const DWORD size=ExpandEnvironmentStringsW(path.c_str(),nullptr,0);if(!size||size>32768)return {};std::wstring expanded(size,0);if(!ExpandEnvironmentStringsW(path.c_str(),expanded.data(),size))return {};expanded.resize(size-1);path=std::move(expanded);}
-    if(path.size()<3||path[1]!=L':'||(path[2]!=L'\\'&&path[2]!=L'/'))return {};
+    std::replace(path.begin(),path.end(),L'/',L'\\');
+    if(!LocalBinaryPathSyntax(path))return {};
     const std::wstring drive=path.substr(0,3);if(GetDriveTypeW(drive.c_str())!=DRIVE_FIXED)return {};
     return path;
 }
-Json Hash(const std::wstring& path) {
-    const HANDLE file=CreateFileW(path.c_str(),GENERIC_READ,FILE_SHARE_READ|FILE_SHARE_WRITE|FILE_SHARE_DELETE,nullptr,OPEN_EXISTING,FILE_ATTRIBUTE_NORMAL|FILE_FLAG_SEQUENTIAL_SCAN,nullptr);
-    if(file==INVALID_HANDLE_VALUE)return Failure(GetLastError(),"Binary could not be read; it may still be loaded.");
-    LARGE_INTEGER size{};if(!GetFileSizeEx(file,&size)){const auto e=GetLastError();CloseHandle(file);return Failure(e);}
-    if(size.QuadPart>128ll*1024*1024){CloseHandle(file);return Value("limit_exceeded",nullptr,ERROR_FILE_TOO_LARGE,"Binary hash limit is 128 MiB.");}
+bool SameFinalPath(HANDLE handle,const std::wstring& expected){
+    const DWORD size=GetFinalPathNameByHandleW(handle,nullptr,0,FILE_NAME_NORMALIZED|VOLUME_NAME_GUID);if(!size||size>32768)return false;
+    std::wstring actual(size,0);const DWORD written=GetFinalPathNameByHandleW(handle,actual.data(),size,FILE_NAME_NORMALIZED|VOLUME_NAME_GUID);
+    if(!written||written>=size)return false;actual.resize(written);
+    return actual.size()==expected.size()&&CompareStringOrdinal(actual.data(),static_cast<int>(actual.size()),expected.data(),static_cast<int>(expected.size()),TRUE)==CSTR_EQUAL;
+}
+LocalBinary OpenLocalBinary(const std::wstring& path){
+    LocalBinary result;const auto refuse=[&](DWORD error,const char* detail){result.error=error;result.detail=detail;};
+    if(!LocalBinaryPathSyntax(path)){refuse(ERROR_INVALID_NAME,"Binary path is outside the plain drive-absolute syntax policy.");return result;}
+    const std::wstring drive=path.substr(0,3);wchar_t volume[MAX_PATH]{};
+    if(GetDriveTypeW(drive.c_str())!=DRIVE_FIXED||!GetVolumeNameForVolumeMountPointW(drive.c_str(),volume,MAX_PATH)){refuse(ERROR_NOT_SUPPORTED,"The driver binary could not be mapped to a local fixed volume.");return result;}
+    const std::wstring root=volume;
+    if(root.rfind(L"\\\\?\\Volume{",0)!=0||root.size()>64||root.back()!=L'\\'||GetDriveTypeW(root.c_str())!=DRIVE_FIXED){refuse(ERROR_NOT_SUPPORTED,"A local fixed-volume GUID was not established.");return result;}
+    const std::wstring full=root+path.substr(3);if(full.size()>32767){refuse(ERROR_FILENAME_EXCED_RANGE,"Expanded fixed-volume path exceeds the inspection limit.");return result;}
+    std::wstring current=root;std::size_t at=root.size();
+    for(;;){
+        const auto next=at==root.size()&&current==root?root.size():full.find(L'\\',at);
+        const bool rootStep=current==root&&at==root.size();
+        const bool final=!rootStep&&next==std::wstring::npos;
+        if(!rootStep)current=final?full:full.substr(0,next);
+        const DWORD access=final?GENERIC_READ:FILE_READ_ATTRIBUTES;
+        // Retain parent handles without write/delete sharing while descendants are opened.
+        // A busy or uninspectable directory is skipped rather than following a mutable alias.
+        const DWORD sharing=final?FILE_SHARE_READ|FILE_SHARE_WRITE:FILE_SHARE_READ;
+        File opened(CreateFileW(current.c_str(),access,sharing,nullptr,OPEN_EXISTING,FILE_FLAG_OPEN_REPARSE_POINT|FILE_FLAG_BACKUP_SEMANTICS|(final?FILE_FLAG_SEQUENTIAL_SCAN:0),nullptr));
+        if(opened.h==INVALID_HANDLE_VALUE){refuse(GetLastError(),"Local path component could not be opened without reparse traversal; no binary inspection was attempted.");return result;}
+        FILE_ATTRIBUTE_TAG_INFO tag{};
+        if(GetFileType(opened.h)!=FILE_TYPE_DISK||!GetFileInformationByHandleEx(opened.h,FileAttributeTagInfo,&tag,sizeof(tag))){refuse(ERROR_NOT_SUPPORTED,"The opened path component did not provide regular local-disk metadata.");return result;}
+        if(tag.FileAttributes&FILE_ATTRIBUTE_REPARSE_POINT){refuse(ERROR_CANT_ACCESS_FILE,"Reparse points, junctions, symbolic links and cloud placeholders are excluded from binary inspection.");return result;}
+        if(((tag.FileAttributes&FILE_ATTRIBUTE_DIRECTORY)!=0)==final||!SameFinalPath(opened.h,current)){refuse(ERROR_CANT_ACCESS_FILE,"The final local-volume identity or expected file/directory type could not be verified.");return result;}
+        if(final){result.path=current;result.file=std::move(opened);return result;}
+        result.parents.push_back(std::move(opened));
+        if(rootStep){current.clear();at=root.size();}else at=next+1;
+    }
+}
+Json Hash(HANDLE file) {
+    LARGE_INTEGER start{};if(!SetFilePointerEx(file,start,nullptr,FILE_BEGIN))return Failure(GetLastError());
+    LARGE_INTEGER size{};if(!GetFileSizeEx(file,&size))return Failure(GetLastError());
+    if(size.QuadPart<0||size.QuadPart>128ll*1024*1024)return Value("limit_exceeded",nullptr,ERROR_FILE_TOO_LARGE,"Binary hash limit is 128 MiB.");
     BCRYPT_ALG_HANDLE alg=nullptr;BCRYPT_HASH_HANDLE hash=nullptr;LONG status=BCryptOpenAlgorithmProvider(&alg,BCRYPT_SHA256_ALGORITHM,nullptr,0);
     if(status>=0)status=BCryptCreateHash(alg,&hash,nullptr,0,nullptr,0,0);
     std::array<BYTE,64*1024> data{};DWORD got=0;DWORD error=0;std::uint64_t total=0;
     while(status>=0){if(!ReadFile(file,data.data(),static_cast<DWORD>(data.size()),&got,nullptr)){error=GetLastError();break;}if(!got)break;total+=got;if(total>128ull*1024*1024){error=ERROR_FILE_TOO_LARGE;break;}status=BCryptHashData(hash,data.data(),got,0);}
     std::array<BYTE,32> digest{};if(!error&&status>=0)status=BCryptFinishHash(hash,digest.data(),static_cast<ULONG>(digest.size()),0);
-    if(hash)BCryptDestroyHash(hash);if(alg)BCryptCloseAlgorithmProvider(alg,0);CloseHandle(file);
+    if(hash)BCryptDestroyHash(hash);if(alg)BCryptCloseAlgorithmProvider(alg,0);
     if(error)return Failure(error);if(status<0)return Value("unavailable",nullptr,static_cast<std::uint32_t>(status),"BCrypt NTSTATUS.");
     std::ostringstream out;out<<std::hex<<std::setfill('0');for(const auto b:digest)out<<std::setw(2)<<static_cast<unsigned>(b);return Value("known",out.str(),0,"File content observed on disk, not a hash of loaded memory.");
 }
-Json Signature(const std::wstring& path) {
-    WINTRUST_FILE_INFO file{sizeof(file)};file.pcwszFilePath=path.c_str();
+Json Signature(HANDLE handle,const std::wstring& path) {
+    LARGE_INTEGER start{};if(!SetFilePointerEx(handle,start,nullptr,FILE_BEGIN))return Failure(GetLastError());
+    WINTRUST_FILE_INFO file{sizeof(file)};file.pcwszFilePath=path.c_str();file.hFile=handle;
     WINTRUST_DATA data{sizeof(data)};data.dwUIChoice=WTD_UI_NONE;data.fdwRevocationChecks=WTD_REVOKE_NONE;data.dwUnionChoice=WTD_CHOICE_FILE;data.pFile=&file;data.dwStateAction=WTD_STATEACTION_VERIFY;
     data.dwProvFlags=WTD_CACHE_ONLY_URL_RETRIEVAL|WTD_REVOCATION_CHECK_NONE;
-    GUID action=WINTRUST_ACTION_GENERIC_VERIFY_V2;const LONG status=WinVerifyTrust(nullptr,&action,&data);
-    data.dwStateAction=WTD_STATEACTION_CLOSE;WinVerifyTrust(nullptr,&action,&data);
+    GUID action=WINTRUST_ACTION_GENERIC_VERIFY_V2;
+    struct TrustState {GUID* action;WINTRUST_DATA* data;~TrustState(){data->dwStateAction=WTD_STATEACTION_CLOSE;WinVerifyTrust(nullptr,action,data);}} trust{&action,&data};
+    const LONG status=WinVerifyTrust(nullptr,&action,&data);
     const std::string label=status==ERROR_SUCCESS?"cached_trust_accepted":status==TRUST_E_NOSIGNATURE||status==TRUST_E_SUBJECT_FORM_UNKNOWN?"no_embedded_signature":status==TRUST_E_BAD_DIGEST?"invalid_digest":"trust_not_established";
     Json result=Value(label,nullptr,static_cast<std::uint32_t>(status),"Offline embedded Authenticode check only; catalog membership and Windows kernel loading policy are not checked. This is not HLK certification or a blocking decision.");
-    result["subject"]=nullptr;HCERTSTORE store=nullptr;HCRYPTMSG message=nullptr;
-    if(CryptQueryObject(CERT_QUERY_OBJECT_FILE,path.c_str(),CERT_QUERY_CONTENT_FLAG_PKCS7_SIGNED_EMBED,CERT_QUERY_FORMAT_FLAG_BINARY,0,nullptr,nullptr,nullptr,&store,&message,nullptr)) {
-        DWORD count=0;
-        if(CryptMsgGetParam(message,CMSG_SIGNER_INFO_PARAM,0,nullptr,&count)&&count<=PropertyLimit){std::vector<BYTE> buffer(count);
-            if(CryptMsgGetParam(message,CMSG_SIGNER_INFO_PARAM,0,buffer.data(),&count)){const auto signer=reinterpret_cast<PCMSG_SIGNER_INFO>(buffer.data());CERT_INFO info{};info.Issuer=signer->Issuer;info.SerialNumber=signer->SerialNumber;
-                const auto cert=CertFindCertificateInStore(store,X509_ASN_ENCODING|PKCS_7_ASN_ENCODING,0,CERT_FIND_SUBJECT_CERT,&info,nullptr);
-                if(cert){const DWORD length=CertGetNameStringW(cert,CERT_NAME_SIMPLE_DISPLAY_TYPE,0,nullptr,nullptr,0);if(length&&length<PropertyLimit){std::wstring subject(length,0);CertGetNameStringW(cert,CERT_NAME_SIMPLE_DISPLAY_TYPE,0,nullptr,subject.data(),length);subject.resize(length-1);result["subject"]=Utf8(subject);}CertFreeCertificateContext(cert);}
-            }
-        }
+    result["subject"]=nullptr;
+    const auto provider=WTHelperProvDataFromStateData(data.hWVTStateData);
+    const auto signer=provider?WTHelperGetProvSignerFromChain(provider,0,FALSE,0):nullptr;
+    if(signer&&signer->csCertChain&&signer->pasCertChain&&signer->pasCertChain[0].pCert){
+        const auto cert=signer->pasCertChain[0].pCert;const DWORD length=CertGetNameStringW(cert,CERT_NAME_SIMPLE_DISPLAY_TYPE,0,nullptr,nullptr,0);
+        if(length&&length<PropertyLimit){std::wstring subject(length,0);if(CertGetNameStringW(cert,CERT_NAME_SIMPLE_DISPLAY_TYPE,0,nullptr,subject.data(),length)){subject.resize(length-1);result["subject"]=Utf8(subject);}}
     }
-    if(message)CryptMsgClose(message);if(store)CertCloseStore(store,0);return result;
+    return result;
 }
 std::string ServiceState(DWORD n) {switch(n){case SERVICE_STOPPED:return "stopped";case SERVICE_START_PENDING:return "start_pending";case SERVICE_STOP_PENDING:return "stop_pending";case SERVICE_RUNNING:return "running";case SERVICE_PAUSED:return "paused";default:return "state_"+std::to_string(n);}}
 Json Driver(SC_HANDLE scm,DWORD scm_error,const std::wstring& name,const Options& options,std::map<std::wstring,Json>& cache) {
@@ -165,7 +211,9 @@ Json Driver(SC_HANDLE scm,DWORD scm_error,const std::wstring& name,const Options
     const bool kernel=(q->dwServiceType&(SERVICE_KERNEL_DRIVER|SERVICE_FILE_SYSTEM_DRIVER|SERVICE_RECOGNIZER_DRIVER))!=0;
     if(!kernel){result["binary_inspection"]=Value("not_applicable",nullptr,0,"Device service is not a kernel or filesystem driver; application binaries are not inspected.");return result;}
     if(path.empty()){result["binary_inspection"]=Value("not_inspected",nullptr,0,"Only a resolved local fixed-drive binary path is inspected. Network, unknown or malformed paths are skipped.");return result;}
-    auto found=cache.find(path);if(found==cache.end()){auto hash=Hash(path);auto signature=hash.value("status","")=="known"?Signature(path):Value("not_inspected",nullptr,0,"Binary could not be hashed within the local read limits.");found=cache.emplace(path,Json{{"sha256",std::move(hash)},{"embedded_signature",std::move(signature)}}).first;}
+    auto found=cache.find(path);if(found==cache.end()){
+        found=cache.emplace(path,BinaryEvidence(path)).first;
+    }
     result.update(found->second);return result;
 }
 Json RecentEvents(const Options& options) {
@@ -196,6 +244,12 @@ Json RecentEvents(const Options& options) {
     return result;
 }
 } // namespace
+Json BinaryEvidence(const std::wstring& path){
+    auto local=OpenLocalBinary(path);
+    if(!local)return {{"binary_inspection",Value("not_inspected",nullptr,local.error,local.detail)}};
+    auto hash=Hash(local.file.h);auto signature=hash.value("status","")=="known"?Signature(local.file.h,local.path):Value("not_inspected",nullptr,0,"Binary could not be hashed within the local read limits.");
+    return {{"sha256",std::move(hash)},{"embedded_signature",std::move(signature)}};
+}
 Json DecodeRegistryValue(std::uint32_t type,const std::vector<std::uint8_t>& bytes) {return Decode(type,bytes);}
 Json Collect(const Options& options) {
     const auto started=std::chrono::steady_clock::now();Json result=Preview();result["created_utc"]=Now();result["scope"]={{"read_only",true},{"preview",false},{"include_sensitive",options.include_sensitive},{"present_devices_only",true},{"network_upload",false}};

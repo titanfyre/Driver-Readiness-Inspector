@@ -54,11 +54,15 @@ Offline modes use demonstration data and never inventory devices:
 .\DriverReadinessInspector.exe --self-test
 ```
 
+The self-test creates and removes its own temporary fixture file and local directory junction to check path rejection. It does not inspect installed drivers, access network shares or change security settings.
+
 ## Privacy
 
 By default, exported reports omit PnP instance IDs, full driver binary paths and event payloads. Device/provider labels, Windows build, service names, package versions and binary hashes remain useful diagnostic information and may still identify your hardware or software. **Review a report before sharing it.**
 
 Raw identifiers, full paths and event XML are included only after selecting **Include raw device IDs, full paths and event XML** and refreshing, or explicitly passing `--include-sensitive`. Raw event payloads can contain usernames, private filenames or other identifiers. There is no telemetry, network upload, account, key or automatic public sharing. Authenticode verification uses cached trust only; it does not request online revocation data.
+
+Binary inspection accepts bounded paths on local fixed volumes. It rejects reparse points, including directory junctions and symbolic links, verifies each opened component, and passes the same opened file to hashing and signature verification. Ambiguous or inaccessible paths are skipped. This policy avoids following ordinary local junctions to network shares; it is not a security boundary against privileged filesystem changes. See [inspection boundaries](docs/RESULTS.md#boundaries).
 
 ## Build
 
@@ -69,7 +73,7 @@ Windows 10/11 x64, Visual Studio C++ tools, Windows SDK and CMake are required. 
 .\Build.ps1 -AddressSanitizer
 ```
 
-The executable is placed in `obj\Build\bin\Release`. Offline tests cover malformed registry values, Unicode/string boundaries, schema round-trips, status interpretation, HTML injection escaping and sample exports. See [validation](docs/VALIDATION.md) for the tested scope.
+The executable is placed in `obj\Build\bin\Release`. The build selects installed Visual Studio C++ tools; the ASAN build requires a current matching AddressSanitizer component and uses it without permanently changing `PATH`. Offline tests cover malformed registry values, Unicode/string boundaries, schema round-trips, status interpretation, HTML injection escaping, local binary-path rejection and sample exports. See [validation](docs/VALIDATION.md) for the tested scope.
 
 ## Commercial integration
 

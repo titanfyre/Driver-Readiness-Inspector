@@ -7,6 +7,27 @@ namespace Inspector {
 Json Value(std::string status, Json value, std::uint32_t error, std::string detail) {
     return {{"status", std::move(status)}, {"value", std::move(value)}, {"error", error}, {"detail", std::move(detail)}};
 }
+bool LocalBinaryPathSyntax(const std::wstring& path) noexcept {
+    if(path.size()<4||path.size()>32767||!((path[0]>=L'A'&&path[0]<=L'Z')||(path[0]>=L'a'&&path[0]<=L'z'))||path[1]!=L':'||path[2]!=L'\\')return false;
+    std::size_t at=3,parts=0;
+    while(at<path.size()){
+        if(++parts>128)return false;const auto end=path.find(L'\\',at),last=end==std::wstring::npos?path.size():end;
+        if(last==at||last-at>255||path[last-1]==L'.'||path[last-1]==L' ')return false;
+        for(std::size_t n=at;n<last;++n){
+            const auto c=path[n];if(c<32||c==L'<'||c==L'>'||c==L':'||c==L'"'||c==L'|'||c==L'?'||c==L'*'||c==L'/')return false;
+            if(c>=0xD800&&c<=0xDBFF){if(++n>=last||path[n]<0xDC00||path[n]>0xDFFF)return false;}
+            else if(c>=0xDC00&&c<=0xDFFF)return false;
+        }
+        const auto dot=path.find(L'.',at),stemEnd=dot<last?dot:last;const auto stemLength=stemEnd-at;
+        const auto upper=[&](std::size_t n){const auto c=path[at+n];return c>=L'a'&&c<=L'z'?static_cast<wchar_t>(c-L'a'+L'A'):c;};
+        if(stemLength==3){const wchar_t a=upper(0),b=upper(1),c=upper(2);if((a==L'C'&&b==L'O'&&c==L'N')||(a==L'P'&&b==L'R'&&c==L'N')||(a==L'A'&&b==L'U'&&c==L'X')||(a==L'N'&&b==L'U'&&c==L'L'))return false;}
+        if(stemLength==4){const bool port=(upper(0)==L'C'&&upper(1)==L'O'&&upper(2)==L'M')||(upper(0)==L'L'&&upper(1)==L'P'&&upper(2)==L'T');const auto c=upper(3);if(port&&((c>=L'0'&&c<=L'9')||c==0xB9||c==0xB2||c==0xB3))return false;}
+        if(stemLength==6&&upper(0)==L'C'&&upper(1)==L'O'&&upper(2)==L'N'&&upper(3)==L'I'&&upper(4)==L'N'&&upper(5)==L'$')return false;
+        if(stemLength==7&&upper(0)==L'C'&&upper(1)==L'O'&&upper(2)==L'N'&&upper(3)==L'O'&&upper(4)==L'U'&&upper(5)==L'T'&&upper(6)==L'$')return false;
+        if(end==std::wstring::npos)return true;at=end+1;if(at==path.size())return false;
+    }
+    return false;
+}
 std::string HtmlEscape(const std::string& text) {
     std::string out; out.reserve(text.size());
     for (const unsigned char c : text) {
