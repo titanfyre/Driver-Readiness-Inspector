@@ -2,6 +2,17 @@
 
 **Read-only Windows driver diagnostics for OEM support, integrators and IT teams.**
 
+<!-- full-version-contact:start -->
+> [!IMPORTANT]
+> **Full version and commercial licensing**
+>
+> **Discord username: `titancsa`**
+>
+> Open Discord, choose **Friends > Add Friend**, enter **`titancsa`**, then send a direct message. Mention **Driver Readiness Inspector** and ask about the **full / production version, commercial use or OEM redistribution**.
+>
+> Include your intended use and deployment size to discuss pricing, availability and the appropriate licensing / access instructions.
+<!-- full-version-contact:end -->
+
 Inspect the evidence behind a missing device, driver startup failure or signing question. Browse Windows device nodes, compare their associated driver services, and save a local HTML or JSON support report.
 
 **No additional driver is required.** This application uses Windows APIs in user mode. It does not install drivers, capture keyboard/mouse input, activate a license, change security settings or upload reports.
