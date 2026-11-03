@@ -13,7 +13,16 @@
 > Include your intended use and deployment size to discuss pricing, availability and the appropriate licensing / access instructions.
 <!-- full-version-contact:end -->
 
+The published MIT utility is complete: it has no demo timer or paid feature lock.
+The contact above is for optional commercial integration, OEM work and support;
+there is no license purchase needed to unlock this utility.
+
 Inspect the evidence behind a missing device, driver startup failure or signing question. Browse Windows device nodes, compare their associated driver services, and save a local HTML or JSON support report.
+
+A typical support workflow is: the PC owner exports a report, reviews it for
+private information, and shares it with their technician. The technician compares
+the observations with the actual failure; the report does not make a repair or
+security verdict. [Examples of missing information and signature results](docs/RESULTS.md#read-the-status-before-the-value).
 
 **No additional driver is required.** This application uses Windows APIs in user mode. It does not install drivers, capture keyboard/mouse input, activate a license, change security settings or upload reports.
 

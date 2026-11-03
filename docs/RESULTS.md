@@ -18,6 +18,25 @@ Most errors are Windows error numbers. Configuration Manager and NT queries expl
 
 ## Common situations
 
+### Read the status before the value
+
+For example, this is an illustrative observation, not a report from a real PC:
+
+```json
+{"status":"access_denied","value":null,"error":5,"detail":"The read was denied."}
+```
+
+It means **information was not read**, not "disabled" or "no problem". Compare
+it with `not_present` (the queried property was absent) and `not_requested`
+(collection was disabled). Preserve the existing status, error and detail when
+building another UI; do not convert `null` to a green success indicator.
+
+An embedded signature result describes cached trust on this PC. It does not
+promise driver safety, successful loading, catalog membership or HVCI
+compatibility. In particular, `no_embedded_signature` does not mean "unsigned":
+a package catalog may provide the signature. Keep that qualification beside
+the result when explaining a report to a user.
+
 **PnP code 0, stopped filter service:** these are separate observations. Code 0 says Windows reports no problem for this node. Some drivers start on demand or serve a parent node. A stopped service alone is not proof of an installation failure.
 
 **No service property:** this can be normal for a software child node. It does not prove there is no functional parent or class driver.
