@@ -4,13 +4,13 @@
 
 <!-- full-version-contact:start -->
 > [!IMPORTANT]
-> **Full version and commercial licensing**
+> **Optional OEM integration and paid support**
 >
 > **Discord username: `titancsa`**
 >
-> Open Discord, choose **Friends > Add Friend**, enter **`titancsa`**, then send a direct message. Mention **Driver Readiness Inspector** and ask about the **full / production version, commercial use or OEM redistribution**.
+> Open Discord, choose **Friends > Add Friend**, enter **`titancsa`**, then send a direct message. Mention **Driver Readiness Inspector** and describe any **OEM branding, deployment integration, tailored reports or support** you need.
 >
-> Include your intended use and deployment size to discuss pricing, availability and the appropriate licensing / access instructions.
+> Include your intended use and deployment size to discuss the scope and pricing of that optional work. The published MIT utility does not require a paid unlock for commercial use.
 <!-- full-version-contact:end -->
 
 The published MIT utility is complete: it has no demo timer or paid feature lock.
