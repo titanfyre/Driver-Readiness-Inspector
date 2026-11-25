@@ -1,5 +1,11 @@
 # Driver Readiness Inspector
 
+<!-- simple-start:start -->
+See which devices and drivers Windows reports, then save a support report.
+
+**Start here.** Download the ZIP, open the app and select a device. No extra driver is needed.
+<!-- simple-start:end -->
+
 <!-- full-version-contact:start -->
 > [!IMPORTANT]
 > **Optional OEM integration and paid support**
@@ -104,5 +110,3 @@ This project is independent of Microsoft. Using Windows APIs or displaying a sig
 Use this tool only on systems you own or are authorized to inspect. It is intended for legitimate diagnostics and support. Users are responsible for their use and for protecting exported information. The software is provided without warranty under the [MIT license](LICENSE); this notice does not override applicable law.
 
 ## Commercial integration and support
-
-
