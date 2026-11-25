@@ -1,5 +1,16 @@
 # Driver Readiness Inspector
 
+<!-- full-version-contact:start -->
+> [!IMPORTANT]
+> **Optional OEM integration and paid support**
+>
+> **Discord username: `titancsa`**
+>
+> Open Discord, choose **Friends > Add Friend**, enter **`titancsa`**, then send a direct message. Mention **Driver Readiness Inspector** and describe any **OEM branding, deployment integration, tailored reports or support** you need.
+>
+> Include your intended use and deployment size to discuss the scope and pricing of that optional work. The published MIT utility does not require a paid unlock for commercial use.
+<!-- full-version-contact:end -->
+
 **Read-only Windows driver diagnostics for OEM support, integrators and IT teams.**
 
 The published MIT utility is complete: it has no demo timer or paid feature lock.
@@ -94,13 +105,4 @@ Use this tool only on systems you own or are authorized to inspect. It is intend
 
 ## Commercial integration and support
 
-<!-- full-version-contact:start -->
-> [!IMPORTANT]
-> **Optional OEM integration and paid support**
->
-> **Discord username: `titancsa`**
->
-> Open Discord, choose **Friends > Add Friend**, enter **`titancsa`**, then send a direct message. Mention **Driver Readiness Inspector** and describe any **OEM branding, deployment integration, tailored reports or support** you need.
->
-> Include your intended use and deployment size to discuss the scope and pricing of that optional work. The published MIT utility does not require a paid unlock for commercial use.
-<!-- full-version-contact:end -->
+
