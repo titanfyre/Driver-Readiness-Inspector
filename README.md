@@ -3,7 +3,11 @@
 <!-- simple-start:start -->
 See which devices and drivers Windows reports, then save a support report.
 
-**Start here.** Extract the [Windows ZIP](https://github.com/titanfyre/Driver-Readiness-Inspector/releases/latest), open **DriverReadinessInspector.exe** and select a device. Choose **Export HTML** to save a report. [See the screen](https://titancsa.github.io/guides/first-run/#readiness).
+[First steps](#first-steps) · [Develop](#build) · [Maintain](https://github.com/TitanCSA/sdk-packages/blob/main/CONTRIBUTING.md)
+
+## First steps
+
+Extract the [Windows ZIP](https://github.com/titanfyre/Driver-Readiness-Inspector/releases/latest), open **DriverReadinessInspector.exe** and select a device. Choose **Export HTML** to save a report. [See the screen](https://titancsa.github.io/guides/first-run/#readiness).
 <!-- simple-start:end -->
 
 <!-- full-version-contact:start -->
